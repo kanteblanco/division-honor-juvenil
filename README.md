@@ -51,6 +51,101 @@ club.
 Este proyecto convierte las actas, los partidos etiquetados y los informes en
 una base de datos relacional consultable.
 
+## Tres decisiones del código
+
+El código vive en un repositorio privado (ver más abajo), así que estos tres
+fragmentos son el resumen de cómo está escrito. Son los tres sitios donde una
+decisión pequeña cambiaba la fiabilidad de todo lo que viene detrás.
+
+**Traducir el reloj de la grabación al reloj del partido.** La herramienta de
+etiquetado devuelve el segundo del vídeo, no el minuto de juego: durante el
+descanso el vídeo corre y el partido no. Hacen falta dos instantes, el saque
+inicial y la reanudación, y de ahí sale un desplazamiento distinto para cada
+parte.
+
+```python
+def a_minuto(seg: int, pitido1: int, pitido2: int) -> tuple[int, int]:
+    """Devuelve (parte, minuto de juego). El acta cuenta minutos cumplidos."""
+    if seg < pitido2:
+        return 1, max((seg - pitido1) // 60, 0)
+    return 2, 45 + max((seg - pitido2) // 60, 0)
+```
+
+La división entera no es descuido: el acta anota el minuto cumplido, así que a
+los 59 segundos de juego sigue siendo el minuto 0. Y el `max(..., 0)` evita que
+una etiqueta puesta antes del saque inicial produzca un minuto negativo.
+
+Lo que valida esta función no es un test escrito por mí, es el acta: registra
+una amonestación en el minuto 39, y el tag de falta cometida de ese mismo
+jugador, traducido, cae en el 39:03. Dos mediciones independientes del mismo
+suceso con tres segundos de diferencia. Ese caso está fijado en la suite para
+que un cambio en la traducción no pueda romperlo sin que se note.
+
+**Localizar un partido en el HTML por su contenido, no por su posición.** El
+listado de la jornada no trae identificadores: para saber a qué partido
+pertenece un enlace de acta hay que subir por el árbol del documento. Subir
+cuatro niveles fijos funciona con el maquetado de hoy, pero basta un div de más
+—una etiqueta de aplazado, un icono de televisión— para que caigan en la fila
+de los escudos. Y entonces el partido entra igual, pero sin fecha y sin
+estadio, y el `ON CONFLICT DO UPDATE` las machaca con NULL sin que nada se
+queje.
+
+```python
+candidatos = []
+nodo = a
+for _ in range(NIVELES):
+    nodo = nodo.parent
+    if nodo is None:
+        break
+    if _escudos(nodo) == 2:
+        candidatos.append(nodo)
+    elif candidatos:
+        break
+
+if not candidatos:
+    return None
+for c in candidatos:
+    if RE_FECHA.search(c.get_text(" ", strip=True)):
+        return c
+return candidatos[-1]
+```
+
+Exactamente **dos** escudos, porque en cuanto aparecen más ya se está metiendo
+el partido vecino. Y de los candidatos válidos, el más pequeño que **ya trae la
+fecha**: el más alto, en una página de un solo partido, sería la página entera
+y el menú acabaría dentro del nombre del estadio.
+
+Este cambio no se aplicó a ojo. Se escribió la versión nueva al lado de la
+vieja y se pasaron las dos por los listados guardados en disco —doce páginas,
+setenta y cinco partidos— antes de tocar nada. Los setenta y cinco daban el
+mismo bloque. Solo entonces se sustituyó.
+
+**Derivar en lugar de leer, para que los datos no puedan contradecirse.** De
+cada jugador se guardan los minutos y el tramo que estuvo en el campo. El tramo
+podría leerse de la sustitución, pero entonces habría tres columnas —entrada,
+salida y minutos— que pueden decir cosas distintas.
+
+```python
+# un suplente que no entro no tiene tramo: se deja en NULL para
+# que se distinga de uno que entro y jugo cero minutos
+if mins == 0 and not j["titular"] and entra is None:
+    j["min_entra"] = None
+    j["min_sale"] = None
+else:
+    j["min_entra"] = 0 if j["titular"] else entra
+    j["min_sale"] = (None if j["min_entra"] is None
+                     else j["min_entra"] + mins)
+```
+
+Al derivar `min_sale`, la invariante `min_sale = min_entra + minutos` se cumple
+siempre, pase lo que pase con los cambios, las expulsiones y el descuento. La
+suite comprueba esa propiedad sobre varias combinaciones en lugar de comprobar
+casos concretos.
+
+Y el NULL de las dos primeras líneas es deliberado: un suplente que no entró y
+uno que entró en el minuto 90 tienen los mismos cero minutos, pero no son lo
+mismo, y dejar el tramo a cero haría imposible distinguirlos después.
+
 ## Qué contiene
 
 ```sql
@@ -253,31 +348,10 @@ se pasaron las dos por los listados guardados en `bronze/` —doce páginas,
 setenta y cinco partidos— antes de tocar nada. Los setenta y cinco daban el
 mismo bloque. Solo entonces se aplicó el cambio.
 
-## Instalación
+## Cómo se opera
 
-Requiere Python 3.14, PostgreSQL 17 y wkhtmltopdf para generar los PDF.
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -r requirements.txt
-```
-
-Crear la base y cargar el esquema:
-
-```bash
-createdb -U postgres futbol
-psql -U postgres -d futbol -f sql/schema_division_honor.sql
-```
-
-El esquema es idempotente —todo `IF NOT EXISTS` y `ON CONFLICT DO NOTHING`— y
-trae ya sembrados los niveles, las posiciones, las cincuenta competencias, los
-botones de tagging y las zonas del campo. Lanzarlo dos veces sobre la misma
-base no cambia nada.
-
-Copiar `.env.example` a `.env` y rellenar la cadena de conexión.
-
-## Uso
+Python 3.14, PostgreSQL 17 y wkhtmltopdf para generar los PDF. Todo se opera
+desde la línea de comandos, y estas son las órdenes reales del sistema.
 
 Actualización semanal, un solo comando por grupo:
 
@@ -333,7 +407,7 @@ python src/informe_pdf.py --jugador vivo --acta 70694259   # el de un partido
 python src/informe_pdf.py --equipo villarreal              # todos los escritos
 ```
 
-## Estructura del repositorio
+## Estructura del proyecto
 
 ```
 src/
@@ -510,16 +584,45 @@ el acta, como se explica más arriba.
   acceso con un token de página. Esa protección es deliberada y no se sortea:
   la vía correcta es pedir acceso, no rodearlo.
 
+## Acceso al código
+
+El código fuente está en un repositorio privado. El motivo es el del aviso de
+más abajo: el sistema opera sobre una base de datos con información deportiva
+de jugadores menores de edad, y aunque el repositorio nunca ha contenido esos
+datos, mantenerlo cerrado reduce la superficie de un descuido.
+
+Si quieres revisarlo —por un proceso de selección, por interés técnico o para
+hablar del método— pídeme acceso de lectura y te lo doy. Lo que hay dentro es
+lo que describe la sección «Estructura del proyecto»: once módulos, el esquema
+completo, 116 tests, la plantilla del informe y las herramientas de
+diagnóstico.
+
 ## Aviso sobre datos personales
 
 La competición es de categoría juvenil y los jugadores son menores de edad. La
-base guarda únicamente datos deportivos. Las fotografías incrustadas en las
-actas y en las fichas federativas no se almacenan en ningún momento —la única
-foto que llega a un PDF es la que se le pasa a mano al generarlo, y se incrusta
-en ese fichero sin copiarse a ningún sitio—; la base de datos, los ficheros de
-curación manual, los CSV de tagging, los PDF generados y el fichero de Power BI
-no se publican en este repositorio; y las capturas de pantalla no muestran
+base de datos guarda únicamente datos deportivos: ni fotografías, ni datos de
+contacto, ni nada que no sea rendimiento sobre el campo.
+
+Las actas traen incrustado el retrato de la licencia de cada jugador, y por
+tanto esas imágenes están dentro del HTML crudo que se guarda en `bronze/`.
+Nunca se extraen, nunca llegan a la base de datos y esa carpeta no se publica.
+La única fotografía que aparece en un informe es la que se le pasa a mano al
+generarlo, y queda incrustada en ese PDF concreto sin copiarse a ningún sitio.
+
+Nada que contenga nombres sale publicado: ni la base de datos, ni los ficheros
+de curación manual, ni los CSV de etiquetado, ni los PDF generados, ni el
+fichero de Power BI. Y las capturas de pantalla de este repositorio no muestran
 nombres de jugadores.
 
 Los clips enlazan a vídeos que los propios clubes han publicado en abierto, y
 el enlace apunta a la fuente original en lugar de redistribuir el material.
+
+## Autoría y licencia
+
+Proyecto de Roberto Peña Alcaide.
+
+El texto y las imágenes de este repositorio se publican para su consulta y
+evaluación, con todos los derechos reservados; ver `LICENSE`. El código fuente
+no está incluido y no se publica bajo ninguna licencia.
+
+Los commits de este repositorio y del privado van firmados.
