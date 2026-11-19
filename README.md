@@ -37,6 +37,9 @@ goles por 90 minutos, ratio de titularidad, rotación por equipo, reparto de
 minutos por año de nacimiento y —reconstruyendo el marcador minuto a minuto—
 en qué situación de partido juega cada jugador sus minutos.
 
+![Reparto de minutos por año de nacimiento en los dieciséis clubes del
+grupo 7, con el detalle por club, año y porcentaje de minutos](docs/reparto-minutos.PNG)
+
 Y donde el acta no llega, llega el vídeo. Varios clubes suben sus partidos a
 YouTube, así que las acciones se etiquetan a mano sobre la grabación y se
 cruzan con el acta por dorsal. Eso da pases, duelos, presiones y zonas de
@@ -270,17 +273,39 @@ local/visitante y ranking dentro del grupo, racha de los últimos partidos con
 el rival, plantilla completa y reparto de minutos. La tabla de clasificación
 funciona además como selector.
 
+![Página de equipo: clasificación, goles a favor y en contra con ranking,
+plantilla y reparto de minutos. Los nombres van ocultos por tratarse de
+menores de edad](docs/ficha-equipo.png)
+
+![Detalle de la plantilla de un club: dorsal, posición, año de nacimiento, minutos totales, titularidades y
+goles de cada jugador, con la columna de nombres oculta](docs/detalle-equipo.PNG)
+
 **Jugador.** Ficha de temporada: minutos por jornada, porcentaje de los
 minutos posibles, perfil técnico y táctico a partir del vídeo, radar de
 valoración en dieciséis aspectos, panel de fortalezas y debilidades, e informe
 en texto.
 
+![Página de jugador: minutos por jornada, mapa de zonas de intervención,
+radar de los dieciséis aspectos y panel de fortalezas y debilidades. La
+cabecera con los datos de ficha se ha recortado](docs/ficha-jugador.png)
+
 **Vídeo.** Un partido etiquetado: desglose de acciones por categoría, mapa de
 zonas de intervención, volumen por tramos de quince minutos y tabla de clips
 con enlace al segundo exacto de la grabación.
 
+![Página de vídeo: desglose de acciones por categoría, zonas de
+intervención y tabla de clips enlazados al segundo exacto de la grabación](docs/ficha-video.png)
+
 **Exploración.** Todos los jugadores de la base con filtros por competición,
 grupo, equipo, posición, año, minutos, partidos y goles.
+
+![Página de exploración: todos los jugadores de la base con filtros por
+competición, grupo, equipo, posición, año, minutos, partidos y goles. La
+columna de nombres va oculta](docs/lista-exploracion.png)
+
+En todas las capturas los nombres de los jugadores van ocultos o recortados.
+Es la misma regla que recoge el aviso del final: de esta base no sale nada
+que identifique a un menor.
 
 Los escudos y los colores de cada club salen de la base: el escudo va
 codificado en base64 dentro del modelo, así que el informe funciona sin
